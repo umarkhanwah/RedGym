@@ -1,7 +1,7 @@
 import express from 'express';
 import {  body } from 'express-validator';
 import { fetchUser } from '../middlewares/authMiddleware.js';
-import { addTrainee, fetchAbsentTrainees, fetchTrainees, markAttendance , payFees, fetchUnpaidFeesTrainees} from '../controller/gymController.js';
+import { addTrainee, fetchAbsentTrainees, fetchTrainees, markAttendance , payFees, fetchUnpaidFeesTrainees, fetchMonthFeesPaidTrainees, fetchTodayPresentTrainees} from '../controller/gymController.js';
 
 
 
@@ -9,6 +9,8 @@ import { addTrainee, fetchAbsentTrainees, fetchTrainees, markAttendance , payFee
 const router = express.Router();
 
 
+router.get('/PresentTrainees', fetchTodayPresentTrainees);
+router.get('/PaidFeesTrainees', fetchMonthFeesPaidTrainees);
 router.post('/payFees', payFees);
 router.get('/fetchUnpaidFeesTrainees', fetchUnpaidFeesTrainees);
 

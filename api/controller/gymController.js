@@ -35,7 +35,7 @@ export const fetchAbsentTrainees = async (req, res) => {
             endOfDay.setHours(23, 59, 59, 999); // End of today's date
     
             // Fetch all trainees for the gym
-            const allTrainees = await TraineeModel.find({ gym: gymId }).select('_id name rollNumber');
+            const allTrainees = await TraineeModel.find({ gym: gymId });
     
             // Fetch attendance records for today
             const attendanceRecords = await AttendanceModel.find({
@@ -136,7 +136,7 @@ export const payFees = async (req, res) => {
     
             // Fetch all trainees
             const allTrainees = await TraineeModel.find()
-                .select('_id name rollNumber phone')
+                
                 .lean(); // Use lean for faster queries since we don't modify documents.
     
             // Fetch trainees who have paid fees this month
@@ -157,7 +157,7 @@ export const payFees = async (req, res) => {
     
             // Filter trainees who haven’t paid fees
             const unpaidTrainees = allTrainees.filter(trainee => !paidTraineeIds.has(trainee._id.toString()));
-    
+            
             res.status(200).json({
                 message: "Unpaid trainees fetched successfully",
                 unpaidTrainees,
@@ -167,4 +167,53 @@ export const payFees = async (req, res) => {
             res.status(500).json({ message: "Server Error" });
         }
     };
-    
+  
+  
+
+export const fetchMonthFeesPaidTrainees = async (req, res) => {
+    try {
+        const startOfMonth = new Date();
+        startOfMonth.setDate(1);
+        startOfMonth.setHours(0, 0, 0, 0);
+
+        const endOfMonth = new Date(startOfMonth);
+        endOfMonth.setMonth(endOfMonth.getMonth() + 1);
+
+        const fees = await FeeSModel.find({
+            date: { $gte: startOfMonth, $lt: endOfMonth },
+        }); 
+        //Dont need to populate
+        
+        
+        const trainees = fees.map((fee) => fee.trainee);
+        // Trainee's id is stored in the field trainee
+
+        res.status(200).json(trainees);
+    } catch (error) {
+        res.status(500).json({ message: 'Error fetching trainees', error });
+    }
+};
+
+
+
+export const fetchTodayPresentTrainees = async (req, res) => {
+    try {
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+
+        const endOfDay = new Date(startOfDay);
+        endOfDay.setDate(endOfDay.getDate() + 1);
+
+        const attendanceRecords = await AttendanceModel.find({
+            date: { $gte: startOfDay, $lt: endOfDay },
+        });
+
+        const trainees = attendanceRecords.map((record) => record.trainee);
+
+        res.status(200).json( trainees);
+    } catch (error) {
+        res.status(500).json(error.message );
+    }
+};
+
+
