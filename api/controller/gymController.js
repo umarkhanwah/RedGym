@@ -1,6 +1,79 @@
 import AttendanceModel from "../models/attendance.model.js";
+import BodyMeasurementModel from "../models/BodyMeasurement.model.js";
 import FeeSModel from "../models/FeeStatus.model.js";
 import TraineeModel from "../models/Users/Trainee.model.js";
+
+// Fetch Trainee Details
+export const getTraineeDetails = async (req, res) => {
+  try {
+    const { traineeId } = req.params;
+    const trainee = await TraineeModel.findById(traineeId);
+
+    if (!trainee) {
+      return res.status(404).json({ message: 'Trainee not found' });
+    }
+
+    res.status(200).json(trainee);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching trainee details', error });
+  }
+};
+
+// Fetch Body Measurements
+export const getBodyMeasurements = async (req, res) => {
+  try {
+    const { traineeId } = req.params;
+
+    const measurements = await BodyMeasurementModel.find({ traineeId })
+      .sort({ date: -1 }) // Sort by latest date
+      .exec();
+
+    res.status(200).json(measurements);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching body measurements', error });
+  }
+};
+
+// Add New Body Measurement
+export const addBodyMeasurement = async (req, res) => {
+  try {
+    const { traineeId } = req.params;
+    const { chest, back, shoulder, weight, foreArm, arm, leg } = req.body;
+
+    // Check if trainee exists
+    const trainee = await TraineeModel.findById(traineeId);
+    if (!trainee) {
+      return res.status(404).json({ message: 'Trainee not found' });
+    }
+
+    const newMeasurement = new BodyMeasurementModel({
+      traineeId,
+      chest,
+      back,
+      shoulder,
+      weight,
+      foreArm, arm, leg
+    });
+
+    const savedMeasurement = await newMeasurement.save();
+    res.status(201).json(savedMeasurement);
+  } catch (error) {
+    res.status(500).json({ message: 'Error adding body measurement', error });
+  }
+};
+export const DeleteBodyMeasurement = async (req, res) => {
+    const {M_id} = req.params;
+    
+    try {
+        await BodyMeasurementModel.findByIdAndDelete(M_id);
+        res.status(200).json({message : "Measurement Deleted Succesfully"})
+    } catch (error) {
+        
+        console.log(error.message);
+        res.status(500).json({message : error.message})
+    }
+    
+}
 
 export const addTrainee = async(req , res)=>{
         const {rollNumber  , name , joinDate} = req.body;
@@ -123,8 +196,8 @@ export const payFees = async (req, res) => {
         }
     };
 
-
     export const fetchUnpaidFeesTrainees = async (req, res) => {
+        const gym = req.gymId;
         try {
             const startOfMonth = new Date();
             startOfMonth.setDate(1);
@@ -134,86 +207,216 @@ export const payFees = async (req, res) => {
             endOfMonth.setMonth(endOfMonth.getMonth() + 1);
             endOfMonth.setMilliseconds(-1);
     
-            // Fetch all trainees
-            const allTrainees = await TraineeModel.find()
-                
-                .lean(); // Use lean for faster queries since we don't modify documents.
+            // Fetch all trainees belonging to the gym
+            const allTrainees = await TraineeModel.find({ gym }).lean();
     
             // Fetch trainees who have paid fees this month
             const paidFees = await FeeSModel.find({
                 date: { $gte: startOfMonth, $lte: endOfMonth },
-            }).select('trainee');
+            }).select("trainee");
     
             if (!paidFees.length) {
-                // If no fees are paid, all trainees are unpaid
+                // If no fees are paid, all gym trainees are unpaid
                 return res.status(200).json({
-                    message: "No fees paid this month. All trainees are unpaid.",
+                    message: "No fees paid this month. All gym trainees are unpaid.",
                     unpaidTrainees: allTrainees,
                 });
             }
     
             // Convert to a set for fast lookups
-            const paidTraineeIds = new Set(paidFees.map(record => record.trainee.toString()));
+            const paidTraineeIds = new Set(paidFees.map((record) => record.trainee.toString()));
     
             // Filter trainees who haven’t paid fees
-            const unpaidTrainees = allTrainees.filter(trainee => !paidTraineeIds.has(trainee._id.toString()));
-            
+            const unpaidTrainees = allTrainees.filter(
+                (trainee) => !paidTraineeIds.has(trainee._id.toString())
+            );
+    
             res.status(200).json({
                 message: "Unpaid trainees fetched successfully",
                 unpaidTrainees,
             });
         } catch (error) {
             console.error("Error fetching unpaid trainees:", error);
-            res.status(500).json({ message: "Server Error" });
+            res.status(500).json({ message: "Server Error", error });
         }
     };
+    export const fetchMonthFeesPaidTrainees = async (req, res) => {
+        const gym = req.gymId;
+        try {
+            const startOfMonth = new Date();
+            startOfMonth.setDate(1);
+            startOfMonth.setHours(0, 0, 0, 0);
+    
+            const endOfMonth = new Date(startOfMonth);
+            endOfMonth.setMonth(endOfMonth.getMonth() + 1);
+            endOfMonth.setMilliseconds(-1);
+    
+            // Fetch fee records for the given gym
+            const fees = await FeeSModel.find({
+                date: { $gte: startOfMonth, $lt: endOfMonth },
+            });
+    
+            if (!fees.length) {
+                return res.status(200).json({
+                    message: "No trainees paid fees this month for this gym.",
+                    trainees: [],
+                });
+            }
+    
+            // Get trainee IDs
+            const traineeIds = fees.map((fee) => fee.trainee);
+    
+            // Fetch trainee details belonging to the gym
+            const trainees = await TraineeModel.find({
+                _id: { $in: traineeIds },
+                gym,
+            });
+    
+            res.status(200).json({
+                message: "Monthly fees paid trainees fetched successfully",
+                trainees,
+            });
+        } catch (error) {
+            console.error("Error fetching monthly fees paid trainees:", error);
+            res.status(500).json({ message: "Server Error", error });
+        }
+    };
+    export const fetchTodayPresentTrainees = async (req, res) => {
+        const gym = req.gymId;
+        try {
+            const startOfDay = new Date();
+            startOfDay.setHours(0, 0, 0, 0);
+    
+            const endOfDay = new Date(startOfDay);
+            endOfDay.setDate(endOfDay.getDate() + 1);
+    
+            // Fetch attendance records for today
+            const attendanceRecords = await AttendanceModel.find({
+                date: { $gte: startOfDay, $lt: endOfDay },
+            });
+    
+            if (!attendanceRecords.length) {
+                return res.status(200).json({
+                    message: "No trainees marked as present today.",
+                    trainees: [],
+                });
+            }
+    
+            // Get trainee IDs from attendance records
+            const traineeIds = attendanceRecords.map((record) => record.trainee);
+    
+            // Fetch trainee details belonging to the gym
+            const trainees = await TraineeModel.find({
+                _id: { $in: traineeIds },
+                gym,
+            });
+    
+            res.status(200).json({
+                message: "Today's present trainees fetched successfully",
+                trainees,
+            });
+        } catch (error) {
+            console.error("Error fetching today's present trainees:", error);
+            res.status(500).json({ message: "Server Error", error });
+        }
+    };
+            
+
+
+
+//     export const fetchUnpaidFeesTrainees = async (req, res) => {
+//         const gym = req.gymId
+//         try {
+//             const startOfMonth = new Date();
+//             startOfMonth.setDate(1);
+//             startOfMonth.setHours(0, 0, 0, 0);
+    
+//             const endOfMonth = new Date(startOfMonth);
+//             endOfMonth.setMonth(endOfMonth.getMonth() + 1);
+//             endOfMonth.setMilliseconds(-1);
+    
+//             // Fetch all trainees
+//             const allTrainees = await TraineeModel.find()
+                
+//                 .lean(); // Use lean for faster queries since we don't modify documents.
+    
+//             // Fetch trainees who have paid fees this month
+//             const paidFees = await FeeSModel.find({
+//                 date: { $gte: startOfMonth, $lte: endOfMonth }
+//             }).select('trainee');
+    
+//             if (!paidFees.length) {
+//                 // If no fees are paid, all trainees are unpaid
+//                 return res.status(200).json({
+//                     message: "No fees paid this month. All trainees are unpaid.",
+//                     unpaidTrainees: allTrainees,
+//                 });
+//             }
+    
+//             // Convert to a set for fast lookups
+//             const paidTraineeIds = new Set(paidFees.map(record => record.trainee.toString()));
+    
+//             // Filter trainees who haven’t paid fees
+//             const unpaidTrainees = allTrainees.filter(trainee => !paidTraineeIds.has(trainee._id.toString()));
+            
+//             res.status(200).json({
+//                 message: "Unpaid trainees fetched successfully",
+//                 unpaidTrainees,
+//             });
+//         } catch (error) {
+//             console.error("Error fetching unpaid trainees:", error);
+//             res.status(500).json({ message: "Server Error" });
+//         }
+//     };
   
   
 
-export const fetchMonthFeesPaidTrainees = async (req, res) => {
-    try {
-        const startOfMonth = new Date();
-        startOfMonth.setDate(1);
-        startOfMonth.setHours(0, 0, 0, 0);
+//     export const fetchMonthFeesPaidTrainees = async (req, res) => {
+//         const gym = req.gymId
+//         try {
+//             const startOfMonth = new Date();
+//             startOfMonth.setDate(1);
+//             startOfMonth.setHours(0, 0, 0, 0);
 
-        const endOfMonth = new Date(startOfMonth);
-        endOfMonth.setMonth(endOfMonth.getMonth() + 1);
+//             const endOfMonth = new Date(startOfMonth);
+//             endOfMonth.setMonth(endOfMonth.getMonth() + 1);
 
-        const fees = await FeeSModel.find({
-            date: { $gte: startOfMonth, $lt: endOfMonth },
-        }); 
-        //Dont need to populate
-        
-        
-        const trainees = fees.map((fee) => fee.trainee);
-        // Trainee's id is stored in the field trainee
+//             const fees = await FeeSModel.find({
+//                 date: { $gte: startOfMonth, $lt: endOfMonth },
+//             }); 
+//             //Dont need to populate
+            
+            
+            
+//             const trainees = fees.map((fee) => fee.trainee);
+//             // Trainee's id is stored in the field trainee
 
-        res.status(200).json(trainees);
-    } catch (error) {
-        res.status(500).json({ message: 'Error fetching trainees', error });
-    }
-};
+//             res.status(200).json(trainees);
+//         } catch (error) {
+//             res.status(500).json({ message: 'Error fetching trainees', error });
+//         }
+//     };
 
 
 
-export const fetchTodayPresentTrainees = async (req, res) => {
-    try {
-        const startOfDay = new Date();
-        startOfDay.setHours(0, 0, 0, 0);
+// export const fetchTodayPresentTrainees = async (req, res) => {
+//     try {
+//         const startOfDay = new Date();
+//         startOfDay.setHours(0, 0, 0, 0);
 
-        const endOfDay = new Date(startOfDay);
-        endOfDay.setDate(endOfDay.getDate() + 1);
+//         const endOfDay = new Date(startOfDay);
+//         endOfDay.setDate(endOfDay.getDate() + 1);
 
-        const attendanceRecords = await AttendanceModel.find({
-            date: { $gte: startOfDay, $lt: endOfDay },
-        });
+//         const attendanceRecords = await AttendanceModel.find({
+//             date: { $gte: startOfDay, $lt: endOfDay },
+//         });
 
-        const trainees = attendanceRecords.map((record) => record.trainee);
+//         const trainees = attendanceRecords.map((record) => record.trainee);
 
-        res.status(200).json( trainees);
-    } catch (error) {
-        res.status(500).json(error.message );
-    }
-};
+//         res.status(200).json( attendanceRecords);
+//     } catch (error) {
+//         res.status(500).json(error.message );
+//     }
+// };
 
 
